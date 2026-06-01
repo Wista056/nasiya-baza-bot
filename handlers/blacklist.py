@@ -47,8 +47,7 @@ async def bl_add_choose(msg: Message):
 async def bl_manual_start(msg: Message, state: FSMContext):
     if not is_allowed(msg.from_user.id):
         return
-    await msg.answer("👤 Введите <b>ФИО</b> клиента:", parse_mode="HTML",
-                     reply_markup=cancel_keyboard())
+    await msg.answer("👤 Введите <b>ФИО</b> клиента:", parse_mode="HTML", reply_markup=cancel_keyboard())
     await state.set_state(BlacklistManualStates.full_name)
 
 
@@ -63,7 +62,7 @@ async def bl_m_name(msg: Message, state: FSMContext):
 async def bl_m_birth(msg: Message, state: FSMContext):
     val = msg.text.strip()
     await state.update_data(birth_date="" if val == "-" else val)
-    await msg.answer("📄 Номер паспорта (например AA1234567) или '-':")
+    await msg.answer("📄 Номер паспорта или '-':")
     await state.set_state(BlacklistManualStates.passport_number)
 
 
@@ -102,12 +101,13 @@ async def bl_m_phone(msg: Message, state: FSMContext):
 @router.message(BlacklistManualStates.reason)
 async def bl_m_reason(msg: Message, state: FSMContext):
     data = await state.get_data()
+    data["reason"] = msg.text.strip()
     await state.clear()
     name, company, phone = get_user_info(msg.from_user.id)
     add_to_blacklist(
         full_name=data["full_name"],
         phone=data.get("phone", ""),
-        reason=msg.text.strip(),
+        reason=data["reason"],
         added_by_telegram_id=msg.from_user.id,
         birth_date=data.get("birth_date", ""),
         passport_number=data.get("passport_number", ""),
@@ -122,20 +122,18 @@ async def bl_m_reason(msg: Message, state: FSMContext):
         f"👤 {data['full_name']}\n"
         f"📄 Паспорт: {data.get('passport_number') or '—'}\n"
         f"🔢 ПИНФЛ: {data.get('pinfl') or '—'}\n"
-        f"📝 Причина: {msg.text.strip()}\n\n"
+        f"📝 Причина: {data['reason']}\n"
         f"🏢 Добавил: {company or name}",
         parse_mode="HTML", reply_markup=blacklist_menu()
     )
+    await notify_blacklist(msg.bot, data, name, company)
 
 
 @router.message(F.text == "📷 Сканировать паспорт")
 async def bl_passport_start(msg: Message, state: FSMContext):
     if not is_allowed(msg.from_user.id):
         return
-    await msg.answer(
-        "📷 Отправьте <b>фото паспорта</b> клиента.\n\nИИ автоматически извлечёт все данные.",
-        parse_mode="HTML", reply_markup=cancel_keyboard()
-    )
+    await msg.answer("📷 Отправьте <b>фото паспорта</b> клиента.", parse_mode="HTML", reply_markup=cancel_keyboard())
     await state.set_state(BlacklistPassportStates.photo)
 
 
@@ -143,14 +141,16 @@ async def bl_passport_start(msg: Message, state: FSMContext):
 async def bl_passport_photo(msg: Message, state: FSMContext):
     await msg.answer("⏳ Анализирую паспорт...")
     photo = msg.photo[-1]
+    file_id = photo.file_id
     file = await msg.bot.get_file(photo.file_id)
     photo_bytes = await msg.bot.download_file(file.file_path)
     try:
         data = await extract_passport_data(photo_bytes.read())
     except Exception as e:
-        await msg.answer(f"❌ Ошибка: {e}\n\nВведите вручную.")
+        await msg.answer(f"❌ Ошибка: {e}")
         await state.clear()
         return
+    data["photo_file_id"] = file_id
     await state.update_data(passport_data=data)
     text = (
         f"📋 <b>Данные из паспорта:</b>\n\n"
@@ -183,7 +183,7 @@ async def bl_passport_edit(call: CallbackQuery, state: FSMContext):
 async def bl_passport_phone(msg: Message, state: FSMContext):
     val = msg.text.strip()
     await state.update_data(phone="" if val == "-" else val)
-    await msg.answer("📝 Укажите причину добавления в чёрный список:")
+    await msg.answer("📝 Укажите причину добавления:")
     await state.set_state(BlacklistPassportStates.reason)
 
 
@@ -191,12 +191,13 @@ async def bl_passport_phone(msg: Message, state: FSMContext):
 async def bl_passport_reason(msg: Message, state: FSMContext):
     data = await state.get_data()
     passport_data = data.get("passport_data", {})
+    reason = msg.text.strip()
     await state.clear()
     name, company, user_phone = get_user_info(msg.from_user.id)
     add_to_blacklist(
         full_name=passport_data.get("full_name", ""),
         phone=data.get("phone", ""),
-        reason=msg.text.strip(),
+        reason=reason,
         added_by_telegram_id=msg.from_user.id,
         birth_date=passport_data.get("birth_date", ""),
         passport_number=passport_data.get("passport_number", ""),
@@ -206,15 +207,38 @@ async def bl_passport_reason(msg: Message, state: FSMContext):
         added_by_company=company,
         added_by_phone=user_phone,
     )
+    notify_data = {**passport_data, "phone": data.get("phone", ""), "reason": reason}
     await msg.answer(
         f"✅ <b>Клиент добавлен в чёрный список</b>\n\n"
         f"👤 {passport_data.get('full_name') or '—'}\n"
         f"📄 Паспорт: {passport_data.get('passport_number') or '—'}\n"
-        f"🔢 ПИНФЛ: {passport_data.get('pinfl') or '—'}\n"
-        f"📝 Причина: {msg.text.strip()}\n\n"
+        f"📝 Причина: {reason}\n"
         f"🏢 Добавил: {company or name}",
         parse_mode="HTML", reply_markup=blacklist_menu()
     )
+    # Отправляем фото паспорта в канал с данными
+    photo_file_id = passport_data.get("photo_file_id")
+    if photo_file_id:
+        import config
+        caption = (
+            f"🚨 <b>Новая запись в ЧС!</b>\n\n"
+            f"👤 {passport_data.get('full_name') or '—'}\n"
+            f"📅 {passport_data.get('birth_date') or '—'}\n"
+            f"📄 {passport_data.get('passport_number') or '—'}\n"
+            f"🔢 {passport_data.get('pinfl') or '—'}\n"
+            f"🏠 {passport_data.get('address') or '—'}\n"
+            f"📱 {data.get('phone', '') or '—'}\n"
+            f"📝 {reason}\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"🏢 {company or '—'} / {name}"
+        )
+        try:
+            await msg.bot.send_photo(config.CHANNEL_ID, photo_file_id, caption=caption, parse_mode="HTML")
+        except Exception as e:
+            print(f"Ошибка отправки фото в канал: {e}")
+            await notify_blacklist(msg.bot, notify_data, name, company)
+    else:
+        await notify_blacklist(msg.bot, notify_data, name, company)
 
 
 @router.message(F.text == "🔍 Проверить по ЧС")
@@ -230,24 +254,19 @@ async def bl_search_do(msg: Message, state: FSMContext):
     await state.clear()
     results = search_blacklist(msg.text.strip())
     if not results:
-        await msg.answer("✅ <b>Клиент не найден в чёрном списке</b>\n\nМожно работать.",
-                         parse_mode="HTML", reply_markup=blacklist_menu())
+        await msg.answer("✅ <b>Клиент не найден в чёрном списке</b>", parse_mode="HTML", reply_markup=blacklist_menu())
         return
     text = f"🚫 <b>Найдено в чёрном списке: {len(results)}</b>\n\n"
     for r in results:
         text += (
             f"👤 <b>{r['full_name']}</b>\n"
-            f"📅 Дата рождения: {r['birth_date'] or '—'}\n"
-            f"📄 Паспорт: {r['passport_number'] or '—'}\n"
-            f"🔢 ПИНФЛ: {r['pinfl'] or '—'}\n"
-            f"🏠 Адрес: {r['address'] or '—'}\n"
-            f"📱 Телефон: {r['phone'] or '—'}\n"
-            f"📝 Причина: {r['reason']}\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"🏢 Компания: {r['added_by_company'] or '—'}\n"
-            f"👤 Сотрудник: {r['added_by_name'] or '—'}\n"
-            f"📱 Тел. сотрудника: {r['added_by_phone'] or '—'}\n"
-            f"📅 Добавлен: {r['added_at'][:10]}\n"
+            f"📅 {r['birth_date'] or '—'}\n"
+            f"📄 {r['passport_number'] or '—'}\n"
+            f"🔢 {r['pinfl'] or '—'}\n"
+            f"📱 {r['phone'] or '—'}\n"
+            f"📝 {r['reason']}\n"
+            f"🏢 {r['added_by_company'] or '—'} / {r['added_by_name'] or '—'}\n"
+            f"📅 {r['added_at'][:10]}\n"
             f"{'─' * 25}\n"
         )
     await msg.answer(text, parse_mode="HTML", reply_markup=blacklist_menu())
