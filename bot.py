@@ -10,7 +10,7 @@ import config
 from database import init_db, get_user
 from keyboards import main_menu, admin_menu, cancel_keyboard
 from states import RegisterStates
-from handlers import registration, blacklist, products, admin
+from handlers import registration, blacklist, products, admin, superadmin
 
 logging.basicConfig(level=logging.INFO)
 
@@ -89,6 +89,7 @@ async def main():
     init_db()
     dp.include_router(registration.router)
     dp.include_router(admin.router)
+    dp.include_router(superadmin.router)
     dp.include_router(blacklist.router)
     dp.include_router(products.router)
     print("🤖 Nasiya Baza Bot запущен!")
