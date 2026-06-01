@@ -8,19 +8,6 @@ from aiogram.filters import CommandStart
 
 import config
 from database import init_db, get_user
-from keyboards import main_menu, admin_menu, cancel
-
-cd ~/nasiya_bot && cat > bot.py << 'EOF'
-import asyncio
-import logging
-from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.fsm.context import FSMContext
-from aiogram.filters import CommandStart
-
-import config
-from database import init_db, get_user
 from keyboards import main_menu, admin_menu, cancel_keyboard
 from states import RegisterStates
 from handlers import registration, blacklist, products, admin, superadmin
@@ -108,4 +95,5 @@ async def main():
     await dp.start_polling(bot)
 
 
-if __name__ == "__main__":    asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
