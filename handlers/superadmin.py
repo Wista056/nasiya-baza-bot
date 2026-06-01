@@ -1,9 +1,10 @@
 from aiogram import Router, F
-from aiogram.types import Message
+from aiogram.types import Message, FSInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from database import get_conn
 import config
+import io
 
 router = Router()
 SUPER_ADMIN_ID = 6302553503
@@ -19,6 +20,7 @@ def super_menu():
         [KeyboardButton(text="📊 Статистика"), KeyboardButton(text="👥 Все компании")],
         [KeyboardButton(text="🚫 Заблокировать"), KeyboardButton(text="✅ Разблокировать")],
         [KeyboardButton(text="🗑 Удалить из ЧС"), KeyboardButton(text="🗑 Удалить товар")],
+        [KeyboardButton(text="📤 Экспорт в Excel"), KeyboardButton(text="📊 Топ компаний")],
         [KeyboardButton(text="🏠 Главное меню")],
     ], resize_keyboard=True)
 
@@ -57,6 +59,123 @@ async def stats(msg: Message):
         f"📦 Товаров в базе: {prods}",
         parse_mode="HTML"
     )
+
+
+@router.message(F.text == "📊 Топ компаний")
+async def top_companies(msg: Message):
+    if not is_super(msg.from_user.id):
+        return
+    conn = get_conn()
+    bl_top = conn.execute("""
+        SELECT added_by_company, added_by_name, COUNT(*) as cnt
+        FROM blacklist
+        WHERE added_by_company != ''
+        GROUP BY added_by_company
+        ORDER BY cnt DESC LIMIT 10
+    """).fetchall()
+    prod_top = conn.execute("""
+        SELECT added_by_company, added_by_name, COUNT(*) as cnt
+        FROM products
+        WHERE added_by_company != ''
+        GROUP BY added_by_company
+        ORDER BY cnt DESC LIMIT 10
+    """).fetchall()
+    conn.close()
+
+    text = "📊 <b>Топ компаний по активности</b>\n\n"
+    text += "🚫 <b>По чёрному списку:</b>\n"
+    if bl_top:
+        for i, r in enumerate(bl_top, 1):
+            text += f"{i}. {r['added_by_company']} — {r['cnt']} записей\n"
+    else:
+        text += "Нет данных\n"
+
+    text += "\n📦 <b>По базе товаров:</b>\n"
+    if prod_top:
+        for i, r in enumerate(prod_top, 1):
+            text += f"{i}. {r['added_by_company']} — {r['cnt']} товаров\n"
+    else:
+        text += "Нет данных\n"
+
+    await msg.answer(text, parse_mode="HTML")
+
+
+@router.message(F.text == "📤 Экспорт в Excel")
+async def export_excel(msg: Message):
+    if not is_super(msg.from_user.id):
+        return
+    await msg.answer("⏳ Генерирую Excel файл...")
+
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+        import tempfile, os
+
+        wb = openpyxl.Workbook()
+
+        # ── Лист 1: Чёрный список ──
+        ws1 = wb.active
+        ws1.title = "Чёрный список"
+        headers1 = ["ID", "ФИО", "Дата рождения", "Паспорт", "ПИНФЛ", "Адрес",
+                    "Телефон", "Причина", "Компания", "Сотрудник", "Тел. сотрудника", "Дата"]
+        ws1.append(headers1)
+        for cell in ws1[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="C00000")
+            cell.alignment = Alignment(horizontal="center")
+
+        conn = get_conn()
+        bl_rows = conn.execute("SELECT * FROM blacklist ORDER BY id DESC").fetchall()
+        for r in bl_rows:
+            ws1.append([
+                r["id"], r["full_name"], r["birth_date"], r["passport_number"],
+                r["pinfl"], r["address"], r["phone"], r["reason"],
+                r["added_by_company"], r["added_by_name"], r["added_by_phone"],
+                r["added_at"][:10] if r["added_at"] else ""
+            ])
+
+        # ── Лист 2: База товаров ──
+        ws2 = wb.create_sheet("База товаров")
+        headers2 = ["ID", "Серийный номер", "Товар", "Покупатель", "Телефон",
+                    "Паспорт", "ПИНФЛ", "Сумма", "Оплачено", "Остаток",
+                    "Компания", "Сотрудник", "Дата"]
+        ws2.append(headers2)
+        for cell in ws2[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="1F497D")
+            cell.alignment = Alignment(horizontal="center")
+
+        prod_rows = conn.execute("SELECT * FROM products ORDER BY id DESC").fetchall()
+        for r in prod_rows:
+            ws2.append([
+                r["id"], r["serial_number"], r["product_name"], r["buyer_name"],
+                r["buyer_phone"], r["buyer_passport"], r["buyer_pinfl"],
+                r["total_amount"], r["paid_amount"],
+                (r["total_amount"] or 0) - (r["paid_amount"] or 0),
+                r["added_by_company"], r["added_by_name"],
+                r["added_at"][:10] if r["added_at"] else ""
+            ])
+        conn.close()
+
+        # Авторазмер колонок
+        for ws in [ws1, ws2]:
+            for col in ws.columns:
+                max_len = max((len(str(cell.value or "")) for cell in col), default=10)
+                ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 40)
+
+        # Сохраняем во временный файл
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+        wb.save(tmp.name)
+        tmp.close()
+
+        await msg.answer_document(
+            FSInputFile(tmp.name, filename="nasiya_baza_export.xlsx"),
+            caption=f"📊 Экспорт базы данных\n🔴 ЧС: {len(bl_rows)} записей\n📦 Товары: {len(prod_rows)} записей"
+        )
+        os.unlink(tmp.name)
+
+    except Exception as e:
+        await msg.answer(f"❌ Ошибка: {e}")
 
 
 @router.message(F.text == "👥 Все компании")
