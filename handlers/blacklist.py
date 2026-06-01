@@ -18,21 +18,34 @@ def get_user_info(telegram_id):
     return "", "", ""
 
 
+def is_allowed(telegram_id):
+    import config
+    if telegram_id in config.ADMIN_IDS:
+        return True
+    user = get_user(telegram_id)
+    return user is not None and user["status"] == "approved"
+
+
 @router.message(F.text == "🚫 Чёрный список")
 async def blacklist_main(msg: Message):
+    if not is_allowed(msg.from_user.id):
+        await msg.answer("❌ Нет доступа.")
+        return
     await msg.answer("🚫 <b>Чёрный список</b>\n\nВыберите действие:",
                      reply_markup=blacklist_menu(), parse_mode="HTML")
 
 
 @router.message(F.text == "➕ Добавить в ЧС")
 async def bl_add_choose(msg: Message):
+    if not is_allowed(msg.from_user.id):
+        return
     await msg.answer("Как хотите добавить клиента?", reply_markup=blacklist_add_method())
 
 
-# ══════════ РУЧНОЙ ВВОД ══════════
-
 @router.message(F.text == "✍️ Ввести вручную")
 async def bl_manual_start(msg: Message, state: FSMContext):
+    if not is_allowed(msg.from_user.id):
+        return
     await msg.answer("👤 Введите <b>ФИО</b> клиента:", parse_mode="HTML",
                      reply_markup=cancel_keyboard())
     await state.set_state(BlacklistManualStates.full_name)
@@ -89,7 +102,6 @@ async def bl_m_phone(msg: Message, state: FSMContext):
 async def bl_m_reason(msg: Message, state: FSMContext):
     data = await state.get_data()
     await state.clear()
-
     name, company, phone = get_user_info(msg.from_user.id)
     add_to_blacklist(
         full_name=data["full_name"],
@@ -104,7 +116,6 @@ async def bl_m_reason(msg: Message, state: FSMContext):
         added_by_company=company,
         added_by_phone=phone,
     )
-
     await msg.answer(
         f"✅ <b>Клиент добавлен в чёрный список</b>\n\n"
         f"👤 {data['full_name']}\n"
@@ -116,13 +127,12 @@ async def bl_m_reason(msg: Message, state: FSMContext):
     )
 
 
-# ══════════ ПАСПОРТ + ИИ ══════════
-
 @router.message(F.text == "📷 Сканировать паспорт")
 async def bl_passport_start(msg: Message, state: FSMContext):
+    if not is_allowed(msg.from_user.id):
+        return
     await msg.answer(
-        "📷 Отправьте <b>фото паспорта</b> клиента.\n\n"
-        "ИИ автоматически извлечёт все данные.",
+        "📷 Отправьте <b>фото паспорта</b> клиента.\n\nИИ автоматически извлечёт все данные.",
         parse_mode="HTML", reply_markup=cancel_keyboard()
     )
     await state.set_state(BlacklistPassportStates.photo)
@@ -131,29 +141,23 @@ async def bl_passport_start(msg: Message, state: FSMContext):
 @router.message(BlacklistPassportStates.photo, F.photo)
 async def bl_passport_photo(msg: Message, state: FSMContext):
     await msg.answer("⏳ Анализирую паспорт...")
-
-    # Берём фото наилучшего качества
     photo = msg.photo[-1]
     file = await msg.bot.get_file(photo.file_id)
     photo_bytes = await msg.bot.download_file(file.file_path)
-
     try:
         data = await extract_passport_data(photo_bytes.read())
     except Exception as e:
-        await msg.answer(f"❌ Ошибка при распознавании: {e}\n\nПопробуйте ещё раз или введите вручную.")
+        await msg.answer(f"❌ Ошибка: {e}\n\nВведите вручную.")
         await state.clear()
         return
-
     await state.update_data(passport_data=data)
-
     text = (
         f"📋 <b>Данные из паспорта:</b>\n\n"
         f"👤 ФИО: <b>{data.get('full_name') or '—'}</b>\n"
         f"📅 Дата рождения: {data.get('birth_date') or '—'}\n"
         f"📄 Паспорт: {data.get('passport_number') or '—'}\n"
         f"🔢 ПИНФЛ: {data.get('pinfl') or '—'}\n"
-        f"🏠 Адрес: {data.get('address') or '—'}\n\n"
-        f"Данные верны?"
+        f"🏠 Адрес: {data.get('address') or '—'}\n\nДанные верны?"
     )
     await msg.answer(text, parse_mode="HTML", reply_markup=confirm_passport_keyboard())
     await state.set_state(BlacklistPassportStates.confirm)
@@ -163,18 +167,14 @@ async def bl_passport_photo(msg: Message, state: FSMContext):
 async def bl_passport_confirmed(call: CallbackQuery, state: FSMContext):
     await call.message.edit_reply_markup(reply_markup=None)
     await call.answer()
-    await call.message.answer("📱 Введите номер телефона клиента (или '-'):",
-                              reply_markup=cancel_keyboard())
+    await call.message.answer("📱 Введите номер телефона клиента (или '-'):", reply_markup=cancel_keyboard())
     await state.set_state(BlacklistPassportStates.phone)
 
 
 @router.callback_query(F.data == "passport_edit", BlacklistPassportStates.confirm)
 async def bl_passport_edit(call: CallbackQuery, state: FSMContext):
     await call.answer()
-    await call.message.answer(
-        "📷 Отправьте новое фото паспорта или нажмите ❌ Отмена чтобы ввести вручную.",
-        reply_markup=cancel_keyboard()
-    )
+    await call.message.answer("📷 Отправьте новое фото или нажмите ❌ Отмена.", reply_markup=cancel_keyboard())
     await state.set_state(BlacklistPassportStates.photo)
 
 
@@ -191,7 +191,6 @@ async def bl_passport_reason(msg: Message, state: FSMContext):
     data = await state.get_data()
     passport_data = data.get("passport_data", {})
     await state.clear()
-
     name, company, user_phone = get_user_info(msg.from_user.id)
     add_to_blacklist(
         full_name=passport_data.get("full_name", ""),
@@ -206,7 +205,6 @@ async def bl_passport_reason(msg: Message, state: FSMContext):
         added_by_company=company,
         added_by_phone=user_phone,
     )
-
     await msg.answer(
         f"✅ <b>Клиент добавлен в чёрный список</b>\n\n"
         f"👤 {passport_data.get('full_name') or '—'}\n"
@@ -218,12 +216,11 @@ async def bl_passport_reason(msg: Message, state: FSMContext):
     )
 
 
-# ══════════ ПОИСК ══════════
-
 @router.message(F.text == "🔍 Проверить по ЧС")
 async def bl_search_start(msg: Message, state: FSMContext):
-    await msg.answer("🔍 Введите ФИО, телефон, номер паспорта или ПИНФЛ:",
-                     reply_markup=cancel_keyboard())
+    if not is_allowed(msg.from_user.id):
+        return
+    await msg.answer("🔍 Введите ФИО, телефон, номер паспорта или ПИНФЛ:", reply_markup=cancel_keyboard())
     await state.set_state(BlacklistSearchStates.query)
 
 
@@ -231,12 +228,10 @@ async def bl_search_start(msg: Message, state: FSMContext):
 async def bl_search_do(msg: Message, state: FSMContext):
     await state.clear()
     results = search_blacklist(msg.text.strip())
-
     if not results:
         await msg.answer("✅ <b>Клиент не найден в чёрном списке</b>\n\nМожно работать.",
                          parse_mode="HTML", reply_markup=blacklist_menu())
         return
-
     text = f"🚫 <b>Найдено в чёрном списке: {len(results)}</b>\n\n"
     for r in results:
         text += (
@@ -254,5 +249,4 @@ async def bl_search_do(msg: Message, state: FSMContext):
             f"📅 Добавлен: {r['added_at'][:10]}\n"
             f"{'─' * 25}\n"
         )
-
     await msg.answer(text, parse_mode="HTML", reply_markup=blacklist_menu())
