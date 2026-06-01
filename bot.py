@@ -7,7 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.filters import CommandStart
 
 import config
-from database import init_db, get_user, add_user
+from database import init_db, get_user
 from keyboards import main_menu, admin_menu, cancel_keyboard
 from states import RegisterStates
 from handlers import registration, blacklist, products, admin
@@ -43,8 +43,6 @@ async def cmd_start(msg: Message, state: FSMContext):
     if user is None:
         await msg.answer(
             "👋 <b>Добро пожаловать в Nasiya Baza Bot!</b>\n\n"
-            "🚫 Чёрный список клиентов\n"
-            "📦 База товаров в рассрочку\n\n"
             "Для доступа пройдите регистрацию.\n\n"
             "👤 Введите ваше полное имя (ФИО):",
             parse_mode="HTML", reply_markup=cancel_keyboard()
@@ -53,7 +51,7 @@ async def cmd_start(msg: Message, state: FSMContext):
     elif user["status"] == "pending":
         await msg.answer("⏳ Ваша заявка ожидает одобрения администратора.")
     elif user["status"] == "rejected":
-        await msg.answer("❌ Ваша заявка была отклонена. Обратитесь к администратору.")
+        await msg.answer("❌ Ваша заявка была отклонена.")
     else:
         await msg.answer(f"👋 С возвращением, {user['full_name']}!", reply_markup=main_menu())
 
@@ -85,22 +83,6 @@ async def go_home(msg: Message, state: FSMContext):
     await state.clear()
     kb = admin_menu() if msg.from_user.id in config.ADMIN_IDS else main_menu()
     await msg.answer("🏠 Главное меню", reply_markup=kb)
-
-
-# Защита разделов — проверяем доступ
-PROTECTED = {"🚫 Чёрный список", "📦 База товаров", "➕ Добавить в ЧС",
-             "🔍 Проверить по ЧС", "➕ Добавить товар", "🔍 Проверить товар",
-             "✍️ Ввести вручную", "📷 Сканировать паспорт"}
-
-
-@dp.message(F.text.in_(PROTECTED))
-async def access_guard(msg: Message):
-    if not await check_access(msg.from_user.id):
-        user = get_user(msg.from_user.id)
-        if user and user["status"] == "pending":
-            await msg.answer("⏳ Ваша заявка ещё на рассмотрении.")
-        else:
-            await msg.answer("❌ Нет доступа. Напишите /start для регистрации.")
 
 
 async def main():
