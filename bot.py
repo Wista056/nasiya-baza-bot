@@ -8,6 +8,19 @@ from aiogram.filters import CommandStart
 
 import config
 from database import init_db, get_user
+from keyboards import main_menu, admin_menu, cancel
+
+cd ~/nasiya_bot && cat > bot.py << 'EOF'
+import asyncio
+import logging
+from aiogram import Bot, Dispatcher, F
+from aiogram.types import Message
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.context import FSMContext
+from aiogram.filters import CommandStart
+
+import config
+from database import init_db, get_user
 from keyboards import main_menu, admin_menu, cancel_keyboard
 from states import RegisterStates
 from handlers import registration, blacklist, products, admin, superadmin
@@ -29,7 +42,6 @@ async def check_access(telegram_id: int) -> bool:
 async def cmd_start(msg: Message, state: FSMContext):
     await state.clear()
     is_admin = msg.from_user.id in config.ADMIN_IDS
-
     if is_admin:
         await msg.answer(
             "👋 <b>Добро пожаловать, администратор!</b>\n\n"
@@ -37,9 +49,7 @@ async def cmd_start(msg: Message, state: FSMContext):
             parse_mode="HTML", reply_markup=admin_menu()
         )
         return
-
     user = get_user(msg.from_user.id)
-
     if user is None:
         await msg.answer(
             "👋 <b>Добро пожаловать в Nasiya Baza Bot!</b>\n\n"
@@ -50,6 +60,8 @@ async def cmd_start(msg: Message, state: FSMContext):
         await state.set_state(RegisterStates.full_name)
     elif user["status"] == "pending":
         await msg.answer("⏳ Ваша заявка ожидает одобрения администратора.")
+    elif user["status"] == "blocked":
+        await msg.answer("🚫 Ваш аккаунт заблокирован.")
     elif user["status"] == "rejected":
         await msg.answer("❌ Ваша заявка была отклонена.")
     else:
@@ -88,13 +100,12 @@ async def go_home(msg: Message, state: FSMContext):
 async def main():
     init_db()
     dp.include_router(registration.router)
-    dp.include_router(admin.router)
     dp.include_router(superadmin.router)
+    dp.include_router(admin.router)
     dp.include_router(blacklist.router)
     dp.include_router(products.router)
     print("🤖 Nasiya Baza Bot запущен!")
     await dp.start_polling(bot)
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+if __name__ == "__main__":    asyncio.run(main())

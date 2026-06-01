@@ -12,6 +12,7 @@ def admin_menu():
     return ReplyKeyboardMarkup(keyboard=[
         [KeyboardButton(text="🚫 Чёрный список"), KeyboardButton(text="📦 База товаров")],
         [KeyboardButton(text="👥 Заявки"), KeyboardButton(text="ℹ️ Мой профиль")],
+        [KeyboardButton(text="👑 Супер Админ")],
     ], resize_keyboard=True)
 
 
@@ -64,12 +65,4 @@ def approve_user_keyboard(telegram_id):
             InlineKeyboardButton(text="✅ Одобрить", callback_data=f"approve:{telegram_id}"),
             InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject:{telegram_id}"),
         ]
-    ])
-
-
-def choose_destination_keyboard():
-    """Куда добавить клиента из паспорта"""
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🚫 В чёрный список", callback_data="dest_blacklist")],
-        [InlineKeyboardButton(text="📦 В базу товаров", callback_data="dest_products")],
     ])
