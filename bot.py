@@ -66,7 +66,7 @@ async def my_profile(msg: Message):
         f"👤 {'Ism' if lang == 'uz' else 'Имя'}: {user['full_name']}\n"
         f"📱 {'Telefon' if lang == 'uz' else 'Телефон'}: {user['phone']}\n"
         f"🏢 {'Kompaniya' if lang == 'uz' else 'Компания'}: {user['company'] or '—'}\n"
-        f"📅 {'Ro'yxatdan o'tgan' if lang == 'uz' else 'Регистрация'}: {user['registered_at'][:10]}",
+        f"📅 {('Royxatdan otgan' if lang == 'uz' else 'Регистрация')}: {user['registered_at'][:10]}",
         parse_mode="HTML"
     )
 
