@@ -1,6 +1,6 @@
 import sqlite3
 
-DB_PATH = "nasiya_bot.db"
+DB_PATH = "/app/data/nasiya_bot.db"
 
 
 def get_conn():
