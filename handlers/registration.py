@@ -108,7 +108,7 @@ async def reg_company(msg: Message, state: FSMContext):
         f"👤 Имя: {data['full_name']}\n"
         f"📱 Телефон: {data['phone']}\n"
         f"🏢 Компания: {company or '—'}\n"
-        f"🌐 Язык: {'🇷🇺 Русский' if lang == 'ru' else '🇺🇿 O\'zbek'}\n"
+        f"🌐 Язык: {('🇷🇺 Русский' if lang == 'ru' else '🇺🇿 Ozbek')}\n"
         f"🆔 ID: <code>{msg.from_user.id}</code>"
     )
     for admin_id in config.ADMIN_IDS:
