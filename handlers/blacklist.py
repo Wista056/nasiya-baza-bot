@@ -7,6 +7,7 @@ from database import add_to_blacklist, search_blacklist, get_user
 from keyboards import (blacklist_menu, blacklist_add_method,
                        cancel_keyboard, confirm_passport_keyboard)
 from ai_passport import extract_passport_data
+from notifications import notify_blacklist
 
 router = Router()
 
