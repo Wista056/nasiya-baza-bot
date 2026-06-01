@@ -1,5 +1,5 @@
 from aiogram import Router, F
-from aiogram.types import Message
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.context import FSMContext
 
 from states import RegisterStates
@@ -8,6 +8,13 @@ from keyboards import cancel_keyboard, main_menu, admin_menu
 import config
 
 router = Router()
+
+
+def phone_keyboard():
+    return ReplyKeyboardMarkup(keyboard=[
+        [KeyboardButton(text="📱 Отправить мой номер", request_contact=True)],
+        [KeyboardButton(text="❌ Отмена")],
+    ], resize_keyboard=True)
 
 
 @router.message(F.text == "❌ Отмена")
@@ -26,12 +33,25 @@ async def cancel_handler(msg: Message, state: FSMContext):
 @router.message(RegisterStates.full_name)
 async def reg_full_name(msg: Message, state: FSMContext):
     await state.update_data(full_name=msg.text.strip())
-    await msg.answer("📱 Введите ваш номер телефона:", reply_markup=cancel_keyboard())
+    await msg.answer(
+        "📱 Отправьте ваш номер телефона кнопкой ниже:",
+        reply_markup=phone_keyboard()
+    )
     await state.set_state(RegisterStates.phone)
 
 
-@router.message(RegisterStates.phone)
-async def reg_phone(msg: Message, state: FSMContext):
+@router.message(RegisterStates.phone, F.contact)
+async def reg_phone_contact(msg: Message, state: FSMContext):
+    phone = msg.contact.phone_number
+    if not phone.startswith("+"):
+        phone = "+" + phone
+    await state.update_data(phone=phone)
+    await msg.answer("🏢 Введите название компании (или '-' если нет):", reply_markup=cancel_keyboard())
+    await state.set_state(RegisterStates.company)
+
+
+@router.message(RegisterStates.phone, F.text)
+async def reg_phone_text(msg: Message, state: FSMContext):
     await state.update_data(phone=msg.text.strip())
     await msg.answer("🏢 Введите название компании (или '-' если нет):", reply_markup=cancel_keyboard())
     await state.set_state(RegisterStates.company)
@@ -46,8 +66,7 @@ async def reg_company(msg: Message, state: FSMContext):
 
     await msg.answer(
         "✅ Заявка отправлена!\n\n"
-        "Ожидайте одобрения от администратора.\n"
-        "Вы получите уведомление как только заявка будет рассмотрена."
+        "Ожидайте одобрения от администратора."
     )
 
     from keyboards import approve_user_keyboard
