@@ -21,6 +21,7 @@ def super_menu():
         [KeyboardButton(text="🚫 Заблокировать"), KeyboardButton(text="✅ Разблокировать")],
         [KeyboardButton(text="🗑 Удалить из ЧС"), KeyboardButton(text="🗑 Удалить товар")],
         [KeyboardButton(text="📤 Экспорт в Excel"), KeyboardButton(text="📊 Топ компаний")],
+        [KeyboardButton(text="📡 Отправить всё в канал")],
         [KeyboardButton(text="📡 Отправить всё в канал")],,
         [KeyboardButton(text="🏠 Главное меню")],
     ], resize_keyboard=True)
