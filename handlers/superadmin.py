@@ -21,6 +21,7 @@ def super_menu():
         [KeyboardButton(text="🚫 Заблокировать"), KeyboardButton(text="✅ Разблокировать")],
         [KeyboardButton(text="🗑 Удалить из ЧС"), KeyboardButton(text="🗑 Удалить товар")],
         [KeyboardButton(text="📤 Экспорт в Excel"), KeyboardButton(text="📊 Топ компаний")],
+        [KeyboardButton(text="📡 Отправить всё в канал")],,
         [KeyboardButton(text="🏠 Главное меню")],
     ], resize_keyboard=True)
 
@@ -323,3 +324,43 @@ async def del_prod_do(msg: Message, state: FSMContext):
     conn.commit()
     conn.close()
     await msg.answer(f"✅ Товар #{record_id} удалён.", reply_markup=super_menu())
+
+
+@router.message(F.text == "📡 Отправить всё в канал")
+async def send_all_to_channel(msg: Message):
+    if not is_super(msg.from_user.id):
+        return
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM blacklist ORDER BY id DESC").fetchall()
+    conn.close()
+
+    if not rows:
+        await msg.answer("ЧС пуст.", reply_markup=super_menu())
+        return
+
+    await msg.answer(f"⏳ Отправляю {len(rows)} записей в канал...")
+
+    import config
+    sent = 0
+    for r in rows:
+        text = (
+            f"🚨 <b>Чёрный список</b>\n\n"
+            f"👤 <b>{r['full_name']}</b>\n"
+            f"📅 {r['birth_date'] or '—'}\n"
+            f"📄 {r['passport_number'] or '—'}\n"
+            f"🔢 {r['pinfl'] or '—'}\n"
+            f"🏠 {r['address'] or '—'}\n"
+            f"📱 {r['phone'] or '—'}\n"
+            f"📝 {r['reason']}\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"🏢 {r['added_by_company'] or '—'}\n"
+            f"👤 {r['added_by_name'] or '—'}\n"
+            f"📅 {r['added_at'][:10]}"
+        )
+        try:
+            await msg.bot.send_message(config.CHANNEL_ID, text, parse_mode="HTML")
+            sent += 1
+        except Exception as e:
+            print(f"Ошибка: {e}")
+
+    await msg.answer(f"✅ Отправлено {sent} из {len(rows)} записей в канал!", reply_markup=super_menu())
