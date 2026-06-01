@@ -22,9 +22,15 @@ def init_db():
             phone TEXT NOT NULL,
             company TEXT,
             status TEXT DEFAULT 'pending',
+            lang TEXT DEFAULT 'ru',
             registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    # Добавить колонку lang если не существует
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN lang TEXT DEFAULT 'ru'")
+    except Exception:
+        pass
 
     # Чёрный список (расширенный)
     c.execute("""
@@ -168,3 +174,17 @@ def search_product(serial_number):
     ).fetchone()
     conn.close()
     return row
+
+
+def get_user_lang(telegram_id):
+    conn = get_conn()
+    row = conn.execute("SELECT lang FROM users WHERE telegram_id=?", (telegram_id,)).fetchone()
+    conn.close()
+    return row["lang"] if row and row["lang"] else "ru"
+
+
+def set_user_lang(telegram_id, lang):
+    conn = get_conn()
+    conn.execute("UPDATE users SET lang=? WHERE telegram_id=?", (lang, telegram_id))
+    conn.commit()
+    conn.close()
