@@ -12,6 +12,7 @@ from keyboards import main_menu, admin_menu
 from translations import t
 from handlers.registration import lang_keyboard
 from handlers import registration, blacklist, products, admin, superadmin
+from handlers import admin_login
 
 logging.basicConfig(level=logging.INFO)
 
@@ -83,6 +84,7 @@ async def main():
     init_db()
     dp.include_router(registration.router)
     dp.include_router(superadmin.router)
+    dp.include_router(admin_login.router)
     dp.include_router(admin.router)
     dp.include_router(blacklist.router)
     dp.include_router(products.router)
